@@ -21,38 +21,36 @@ struct pseudo_header
 };
  
 unsigned short csum(unsigned short *ptr,int nbytes) {
-    register long sum;
+    long sum;
     unsigned short oddbyte;
-    register short answer;
+    short answer;
  
-    sum=0;
-    while(nbytes>1) {
-        sum+=*ptr++;
-        nbytes-=2;
+    sum = 0;
+    while (nbytes > 1) {
+        sum += *ptr++;
+        nbytes -= 2;
     }
-    if(nbytes==1) {
-        oddbyte=0;
-        *((u_char*)&oddbyte)=*(u_char*)ptr;
-        sum+=oddbyte;
+
+    if (nbytes == 1) {
+        oddbyte = 0;
+        *((u_char*)&oddbyte) = *(u_char*)ptr;
+        sum += oddbyte;
     }
  
-    sum = (sum>>16)+(sum & 0xffff);
-    sum = sum + (sum>>16);
-    answer=(short)~sum;
+    sum = (sum >> 16)+(sum & 0xffff);
+    sum = sum + (sum >> 16);
+    answer = (short) ~ sum;
      
     return(answer);
 }
  
-int main (void)
+int main (int argc, char **argv)
 {
-    //Create a raw socket
-    int s = socket (PF_INET, SOCK_RAW, IPPROTO_TCP);
-    //Datagram to represent the packet
-    char datagram[4096] , source_ip[32];
-    //IP header
-    struct iphdr *iph = (struct iphdr *) datagram;
-    //TCP header
-    struct tcphdr *tcph = (struct tcphdr *) (datagram + sizeof (struct ip));
+    
+    int raw_sock = socket(PF_INET, SOCK_RAW, IPPROTO_TCP);
+    char datagram[4096], source_ip[32];
+    struct iphdr *iph = (struct iphdr *)datagram;
+    struct tcphdr *tcph = (struct tcphdr *)(datagram + sizeof(struct ip));
     struct sockaddr_in sin;
     struct pseudo_header psh;
      
