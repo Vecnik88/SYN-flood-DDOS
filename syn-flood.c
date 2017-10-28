@@ -1,21 +1,4 @@
-#include <stdio.h>
-#include <ctype.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <sys/time.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <string.h>
-#include <netdb.h>
-#include <errno.h>
-#include <stdlib.h>
-#include <time.h> 
-#include <arpa/inet.h>
-
-/* количество потоков по умолчанию */
-#define MAXCHILD 128
-#define BUF_SIZE 100
+#include "syn-flood.h"
 
 int raw_sock = 0;
 static int alive = -1;
@@ -157,7 +140,7 @@ void send_ddos_packet(struct sockaddr_in *addr)
 
 void sig_int(int signo)
 {
-  alive = 0;
+	alive = 0;
 }
 
 int main(int argc, char *argv[])
