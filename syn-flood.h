@@ -1,10 +1,10 @@
 #ifndef SYN_FLOOD_H
 #define SYN_FLOOD_H
 
-/* количество потоков по умолчанию */
 #define MAXCHILD 128
 #define BUF_SIZE 100
 
+/* ip header */
 typedef struct ip_hdr {
 	unsigned char       hl;
 	unsigned char       tos;
@@ -18,6 +18,7 @@ typedef struct ip_hdr {
 	unsigned int        dest_ip;
 } ip_hdr;
 
+/* tcp header */
 typedef struct tcp_hdr {
  	unsigned short      src_port;
  	unsigned short      dest_port;
@@ -30,6 +31,7 @@ typedef struct tcp_hdr {
 	unsigned short      urp;
 } tcp_hdr;
 
+/* fake header */
 typedef struct fake_hdr {
 	unsigned int 		src_addr;
 	unsigned int 		dest_addr;
