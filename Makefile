@@ -1,10 +1,31 @@
-# Makefile
+all: clean syn-flood
 
-CC=gcc
-LD=ld
+CC = gcc
+INC = ./inc
+SRC = ./src
+CFLAGS =-g -Wall -g3 -O0 -I$(INC)
+LDFLAGS = -pthread
+SOURCES = $(wildcard ./src/*.c)
+OBJECTS = $(SOURCES:.c=.o)
+EXECUTABLE = syn-flood
+INSTPATH = /usr/bin
 
-INC=inc/
-SRC=src/
+.PHONY: all clean run install uninstall
 
-build:
-	CC ${CFLAGS} -o ddos 
+$(EXECUTABLE): $(OBJECTS)
+	$(CC) $(LDFLAGS) $(OBJECTS) -o $@
+
+.c.o:
+	$(CC) -c $(CFLAGS) $< -o $@
+
+clean:
+	-rm -f ./src/*.o $(EXECUTABLE) *.txt
+
+install:
+	sudo install $(EXECUTABLE) $(INSTPATH)
+
+uninstall:
+	sudo rm $(INSTPATH)/$(EXECUTABLE)
+
+run:
+	$(INSTPATH)/$(EXECUTABLE)

@@ -15,7 +15,7 @@
 #include <pthread.h>
 #include <getopt.h>
 
-#include "syn-flood.h"
+#include <syn-flood.h>
 
 int raw_sock = 0;
 int dst_port = 0;
