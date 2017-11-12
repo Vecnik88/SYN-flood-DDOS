@@ -18,12 +18,12 @@ TCP/IP 3х-стороннее рукопожатие выполняется дл
 Для получения дополнительной информации о TCP Syn DOS атаки прочитайте RFC 4987.
 
 Для установки:
-	git clone https://github.com/Vecnik88/SYN-flood-DDOS
-	cd SYN-flood-DDOS
-	make
+	- git clone https://github.com/Vecnik88/SYN-flood-DDOS
+	- cd SYN-flood-DDOS
+	- make
 
 Пример запуска программы:
-	sudo ./syn-flood -a ip.ru -p 80 -t 128
+	- sudo ./syn-flood -a ip.ru -p 80 -t 128
 
 	Unknown option: -h
 	usage:
