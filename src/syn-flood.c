@@ -28,9 +28,9 @@ void print_options_programm()
 {
 	printf("Unknown option: -h\n");
 	printf("usage:\n");
-	printf("\t[-a | --addr] ip address destination attack machine\n"); 
-	printf("\t[-h | --help]	help\n");
-    printf("\t[-p | --port]	port destination attack machine\n"); 
+	printf("\t[-a | --addr]   ip address destination attack machine\n"); 
+	printf("\t[-h | --help]   help\n");
+    printf("\t[-p | --port]   port destination attack machine\n"); 
 	printf("\t[-t | --thread] number of threads\n");
 }
 
