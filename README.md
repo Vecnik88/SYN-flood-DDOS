@@ -25,10 +25,6 @@ TCP/IP 3х-стороннее рукопожатие выполняется дл
 Пример запуска программы:
 	sudo ./syn-flood -a ip.ru -p 80 -t 128
 
--a - ип адрес удаленного хоста
--р - порт
--t - количество, потоков
-
 	Unknown option: -h
 	usage:
 		[-a | --addr]   ip address destination attack machine
