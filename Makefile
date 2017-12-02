@@ -19,7 +19,7 @@ $(EXECUTABLE): $(OBJECTS)
 	$(CC) -c $(CFLAGS) $< -o $@
 
 clean:
-	-rm -f ./src/*.o $(EXECUTABLE) *.txt
+	-rm -f ./src/*.o $(EXECUTABLE)
 
 install:
 	sudo install $(EXECUTABLE) $(INSTPATH)
